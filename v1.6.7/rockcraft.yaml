@@ -1,0 +1,32 @@
+name: influxdb
+version: "1.6.7"
+summary: InfluxDB chiselled rock
+description: |
+  InfluxDB Core is a database built to collect, process, transform, 
+  and store event and time series data. It is ideal for use cases that 
+  require real-time ingest and fast query response times to build user 
+  interfaces, monitoring, and automation solutions.
+license: Apache-2.0
+base: bare
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+parts:
+  influxdb:
+    plugin: nil
+    stage-packages:
+      - influxdb_bins
+
+    override-prime: |
+      craftctl default
+      groupadd --root ${CRAFT_PRIME} -g 4242 influxdb
+      useradd -d /var/lib/influxdb --root ${CRAFT_PRIME} -g influxdb -u 4242 influxdb
+      chown -R 4242:4242 ${CRAFT_PRIME}/var/lib/influxdb ${CRAFT_PRIME}/var/log/influxdb ${CRAFT_PRIME}/etc/influxdb
+
+services:
+  influxdb:
+    command: /usr/bin/influxd
+    override: replace
+    startup: enabled
+    user: influxdb

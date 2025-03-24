@@ -1,0 +1,102 @@
+# Metadata
+name: influxdb
+summary: InfluxDB chiselled rock
+description: |
+  InfluxDB Core is a database built to collect, process, transform, 
+  and store event and time series data. It is ideal for use cases that 
+  require real-time ingest and fast query response times to build user 
+  interfaces, monitoring, and automation solutions.
+version: "latest"
+license: Apache-2.0
+
+# Build
+base: bare
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+# Entrypoint
+services:
+  influxdb:
+    override: replace
+    command: /usr/bin/entrypoint.sh serve [ ]
+    environment:
+      INFLUXDB_IOX_OBJECT_STORE: file
+      INFLUXDB3_PLUGIN_DIR: /plugins
+      INFLUXDB_IOX_DB_DIR: /var/lib/influxdb3
+      LOG_FILTER: info
+entrypoint-service: influxdb
+
+# Parts
+parts:
+  influxdb:
+    plugin: nil
+    source: .
+    source-type: local
+    # build-environment:
+      # - CARGO_INCREMENTAL: yes
+      # - CARGO_NET_GIT_FETCH_WITH_CLI: "false"
+      # - PROFILE: release
+      # - FEATURES: aws,gcp,azure,jemalloc_replacing_malloc,system-py
+      # - PACKAGE: influxdb3
+      # - PBS_TARGET: x86_64-unknown-linux-gnu
+      # - PBS_DATE: 20250212
+      # - PBS_VERSION: 3.10.6
+    build-packages:
+      - binutils
+      - build-essential
+      - curl
+      - pkg-config
+      - libssl-dev
+      - clang
+      - lld
+      - git
+      - patchelf
+      - protobuf-compiler
+      - zstd
+      - libz-dev
+    build-snaps:
+      - rustup
+    override-build: |
+      sed -i "s/^readonly TARGETS=.*/readonly TARGETS=${PBS_TARGET}/" ./.circleci/scripts/fetch-python-standalone.bash
+      ./.circleci/scripts/fetch-python-standalone.bash python-artifacts "${PBS_DATE}" "${PBS_VERSION}"
+      tar -C python-artifacts -zxf python-artifacts/all.tar.gz "./${PBS_TARGET}"
+      sed -i 's#tmp/workspace#influxdb3#' "python-artifacts/${PBS_TARGET}/pyo3_config_file.txt"
+
+      du -cshx /usr/local/rustup /usr/local/cargo/registry /usr/local/cargo/git ${CRAFT_PART_INSTALL}
+      PYO3_CONFIG_FILE="python-artifacts/$PBS_TARGET/pyo3_config_file.txt" cargo build --target-dir ${CRAFT_PART_INSTALL} --package="$PACKAGE" --profile="$PROFILE" --no-default-features --features="$FEATURES"
+      objcopy --compress-debug-sections "target/$PROFILE/$PACKAGE"
+      cp "${CRAFT_PART_INSTALL}/$PROFILE/$PACKAGE" "/root/$PACKAGE"
+      patchelf --set-rpath '$ORIGIN/python/lib:$ORIGIN/../lib/influxdb3/python/lib' "/root/$PACKAGE"
+      cp -a "/influxdb3/python-artifacts/$PBS_TARGET/python" /root/python
+      du -cshx /usr/local/rustup /usr/local/cargo/registry /usr/local/cargo/git ${CRAFT_PART_INSTALL}
+
+    stage-packages:
+      - ca-certificates
+      - gettext-base
+      - libssl3
+      - wget
+      - curl
+    organize:
+        'root/python/*': /usr/lib/influxdb3/python
+        'root/influxdb3': /usr/bin/influxdb3
+        'docker/entrypoint.sh': /usr/bin/entrypoint.sh
+    stage:
+      - root/python/
+      - root/influxdb3/
+      - docker/entrypoint.sh
+    override-stage:
+      groupadd --gid 1500 influxdb3
+      useradd --uid 1500 --gid influxdb3 --shell /bin/bash --create-home influxdb3
+      mkdir /var/lib/influxdb3
+      chown influxdb3:influxdb3 /var/lib/influxdb3
+      mkdir -p /usr/lib/influxdb3
+      chown -R root:root /usr/lib/influxdb3
+      mkdir /plugins
+      chown influxdb3:influxdb3 /plugins
+      mkdir ~/.influxdb3
+      craftctl default
+
+    # TODO copy python build (stage step)
+    # TODO create plugin dir (prime?)
+    # TODO organize file in correct structure
