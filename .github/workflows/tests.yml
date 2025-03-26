@@ -18,3 +18,26 @@ jobs:
       - build
     with:
       oci-archive-name: "chiselled-influxdb"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push'}}
+    steps:
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: chiselled-influxdb
+
+      - name: 'Set up skopeo'
+        uses: warjiang/setup-skopeo@main
+        with:
+          version: latest
+
+      - run: skopeo copy --multi-arch all oci-archive:chiselled-influxdb docker://ghcr.io/rockcrafters/chiselled-influxdb/influxdb:latest
